@@ -23,7 +23,7 @@ library(tidyverse)
 
 
 ```{r}
-GridApp <- function(w, n, nsample=20, prior=NULL) {
+GridApp <- function(w, n, nsample=100, prior=NULL) {
   
   p_grid <- seq(from=0, to=1, length.out=nsample)
   
@@ -135,12 +135,71 @@ plot(mikkel$posterior)
 
 3. Change the prior. Given your teachers have all CogSci jobs, you should start with a higher appreciation of their knowledge: the prior is a normal distribution with a mean of 0.8 and a standard deviation of 0.2. Do the results change (and if so how)?
 3a. Produce plots of the prior and posterior for each teacher.
+```{r}
+new_prior <- dnorm((1:100)/100, mean=0.8, sd=0.2)
+
+riccardo_new <- GridApp(3, 6, prior=new_prior)
+kristian_new <- GridApp(2, 2, prior=new_prior)
+mikkel_new <- GridApp(66, 132, prior=new_prior)
+daina_new <- GridApp(160, 198, prior=new_prior)
+
+
+plot(riccardo_new$prior)
+
+plot(riccardo_new$posterior)
+plot(kristian_new$posterior)
+plot(mikkel_new$posterior)
+plot(daina_new$posterior)
+```
+Remarks
+- The more data, the less the prior matters (i.e. Mikkel and Daina are exactly the same, while Kristian and Riccardo differs)
+
 
 4. You go back to your teachers and collect more data (multiply the previous numbers by 100). Calculate their knowledge with both a uniform prior and a normal prior with a mean of 0.8 and a standard deviation of 0.2. Do you still see a difference between the results? Why?
+```{r}
+riccardo_newer <- GridApp(300, 600)
+kristian_newer <- GridApp(200, 200)
+mikkel_newer <- GridApp(6600, 13200)
+daina_newer <- GridApp(16000, 19800)
+
+
+plot(riccardo_newer$prior)
+
+plot(riccardo_newer$posterior)
+plot(kristian_newer$posterior)
+plot(mikkel_newer$posterior)
+plot(daina_newer$posterior)
+
+
+
+riccardo_newer_norm <- GridApp(300, 600, prior=new_prior)
+kristian_newer_norm <- GridApp(200, 200, prior=new_prior)
+mikkel_newer_norm <- GridApp(6600, 13200, prior=new_prior)
+daina_newer_norm <- GridApp(16000, 19800, prior=new_prior)
+
+
+plot(riccardo_newer_norm$prior)
+
+plot(riccardo_newer_norm$posterior)
+plot(kristian_newer_norm$posterior)
+plot(mikkel_newer_norm$posterior)
+plot(daina_newer_norm$posterior)
+riccardo_new$posterior
+```
+The prior don't matter no more! DATA IS LOVE; DATA IS LEIF
+
 
 5. Imagine you're a skeptic and think your teachers do not know anything about CogSci, given the content of their classes. How would you operationalize that belief?
+Intuitively, one might set a prior like N(mean=0, sd=0.1), which would mean that we expect them to get every question WRONG. However, just like with the AUC of models, the "knows nothing" case is really 0.5. This is because "negative knowledge" (if we can test it) would practically be the same as true knowledge. This is because we could just invert everything they say. Therefore, the most pessimistic prior would be something like N(mean=0.5, sd=0.0(...)01) as that would signify that we're very sure they don't know anything. 
+
+
+
 
 6. Optional question: Can you estimate the difference between Riccardo's estimated knowledge and that of each of the other teachers? Would you deem it credible (that is, would you believe that it is actually different)?
+no
+
+
+
 
 7. Bonus knowledge: all the stuff we have done can be implemented in a lme4-like fashion using the brms package. Here is an example.
 

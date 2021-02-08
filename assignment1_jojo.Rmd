@@ -13,6 +13,54 @@ knitr::opts_chunk$set(echo = TRUE)
 
 N.B. this markdown has 2 parts as it spans 2 weeks of teaching
 
+
+### Libraries
+```{r}
+library(rethinking)
+library(tidyverse)
+```
+
+
+
+```{r}
+GridApp <- function(w, n, nsample=20, prior=NULL) {
+  
+  p_grid <- seq(from=0, to=1, length.out=nsample)
+  
+  if(is.null(prior)) {
+    # Uniform prior
+    prior <- rep(1, nsample)
+  }
+  
+  
+  likelihood <- dbinom(w, size=n, prob=p_grid)
+  
+  unstd_posterior <- likelihood * prior
+  posterior <- unstd_posterior / sum(unstd_posterior)
+  return(tibble(p_grid, 
+                prior, 
+                likelihood,
+                unstd_posterior,
+                posterior))
+}
+
+PlotGridApp <- function(posterior){
+  nrows <- length(posterior)
+  tib <- dplyr::rename(
+    dplyr::as_tibble(posterior),
+    "y" = `value`) %>% 
+    mutate(x = row_number() / nrows)
+  
+  ggplot(tib, aes(x=x, y=y)) +
+    geom_point(alpha=0.1) +
+    geom_smooth(se=F) +
+    theme_minimal() +
+    coord_cartesian(xlim=c(0,1), ylim=c(0,max(posterior))) +
+    labs(title="Posterior")
+}
+```
+
+
 ### First part
 
 You want to assess your teachers' knowledge of cognitive science. "These guys are a bunch of drama(turgist) queens, mindless philosophers, chattering communication people and Russian spies. Do they really know CogSci?", you think.
@@ -35,8 +83,55 @@ Questions:
 - Then implement a quadratic approximation (hint check paragraph 2.4.2!).
 - N.B. for the rest of the exercise just keep using the grid approximation (we'll move to quadratic approximations in two classes)
 
+```{r}
+# Grid approximation
+riccardo <- GridApp(3, 6, nsample=20)
+plot(riccardo$posterior)
+
+# prob of being larger
+riccardo %>% 
+  filter(p_grid > 0.5) %>% 
+  summarise(riccardo_better = sum(posterior))
+
+
+# Quadratic approximation ( )
+cog.qa <- quap(
+  alist(
+    W ~ dbinom(W+L, p),
+    p ~ dunif(0, 1)
+  ), 
+  data = list(W=3, L=3)
+)
+
+precis(cog.qa)
+```
+
+
+
+
 2. Estimate all the teachers' knowledge of CogSci. Who's best? Use grid approximation. Comment on the posteriors of Riccardo and Mikkel.
 2a. Produce plots of the prior, and posterior for each teacher.
+```{r}
+kristian <- GridApp(2, 2, nsample=100)
+mikkel <- GridApp(66, 132, nsample=100)
+daina <- GridApp(160, 198, nsample=100)
+
+
+plot(riccardo$prior)
+
+plot(riccardo$posterior)
+plot(kristian$posterior)
+plot(daina$posterior)
+plot(mikkel$posterior)
+
+
+
+```
+
+
+
+
+
 
 3. Change the prior. Given your teachers have all CogSci jobs, you should start with a higher appreciation of their knowledge: the prior is a normal distribution with a mean of 0.8 and a standard deviation of 0.2. Do the results change (and if so how)?
 3a. Produce plots of the prior and posterior for each teacher.

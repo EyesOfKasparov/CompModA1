@@ -13,6 +13,54 @@ knitr::opts_chunk$set(echo = TRUE)
 
 N.B. this markdown has 2 parts as it spans 2 weeks of teaching
 
+
+### Libraries
+```{r}
+library(rethinking)
+library(tidyverse)
+```
+
+
+
+```{r}
+GridApp <- function(w, n, nsample=100, prior=NULL) {
+  
+  p_grid <- seq(from=0, to=1, length.out=nsample)
+  
+  if(is.null(prior)) {
+    # Uniform prior
+    prior <- rep(1, nsample)
+  }
+  
+  
+  likelihood <- dbinom(w, size=n, prob=p_grid)
+  
+  unstd_posterior <- likelihood * prior
+  posterior <- unstd_posterior / sum(unstd_posterior)
+  return(tibble(p_grid, 
+                prior, 
+                likelihood,
+                unstd_posterior,
+                posterior))
+}
+
+PlotGridApp <- function(posterior){
+  nrows <- length(posterior)
+  tib <- dplyr::rename(
+    dplyr::as_tibble(posterior),
+    "y" = `value`) %>% 
+    mutate(x = row_number() / nrows)
+  
+  ggplot(tib, aes(x=x, y=y)) +
+    geom_point(alpha=0.1) +
+    geom_smooth(se=F) +
+    theme_minimal() +
+    coord_cartesian(xlim=c(0,1), ylim=c(0,max(posterior))) +
+    labs(title="Posterior")
+}
+```
+
+
 ### First part
 
 You want to assess your teachers' knowledge of cognitive science. "These guys are a bunch of drama(turgist) queens, mindless philosophers, chattering communication people and Russian spies. Do they really know CogSci?", you think.
@@ -35,21 +83,126 @@ Questions:
 - Then implement a quadratic approximation (hint check paragraph 2.4.2!).
 - N.B. for the rest of the exercise just keep using the grid approximation (we'll move to quadratic approximations in two classes)
 
+```{r}
+# Grid approximation
+riccardo <- GridApp(3, 6, nsample=1000)
+plot(riccardo$posterior)
+
+# prob of being larger
+riccardo %>% 
+  filter(p_grid > 0.5) %>% 
+  summarise(riccardo_better = sum(posterior))
+
+
+# Quadratic approximation ( )
+cog.qa <- quap(
+  alist(
+    W ~ dbinom(W+L, p),
+    p ~ dunif(0, 1)
+  ), 
+  data = list(W=3, L=3)
+)
+
+precis(cog.qa)
+```
+
+
+
+
 2. Estimate all the teachers' knowledge of CogSci. Who's best? Use grid approximation. Comment on the posteriors of Riccardo and Mikkel.
 2a. Produce plots of the prior, and posterior for each teacher.
+```{r}
+kristian <- GridApp(2, 2, nsample=100)
+mikkel <- GridApp(66, 132, nsample=100)
+daina <- GridApp(160, 198, nsample=100)
+
+
+plot(riccardo$prior)
+
+plot(riccardo$posterior)
+plot(kristian$posterior)
+plot(daina$posterior)
+plot(mikkel$posterior)
+
+
+
+```
+
+
+
+
+
 
 3. Change the prior. Given your teachers have all CogSci jobs, you should start with a higher appreciation of their knowledge: the prior is a normal distribution with a mean of 0.8 and a standard deviation of 0.2. Do the results change (and if so how)?
 3a. Produce plots of the prior and posterior for each teacher.
+```{r}
+new_prior <- dnorm((1:100)/100, mean=0.8, sd=0.2)
+
+riccardo_new <- GridApp(3, 6, prior=new_prior)
+kristian_new <- GridApp(2, 2, prior=new_prior)
+mikkel_new <- GridApp(66, 132, prior=new_prior)
+daina_new <- GridApp(160, 198, prior=new_prior)
+
+
+plot(riccardo_new$prior)
+
+plot(riccardo_new$posterior)
+plot(kristian_new$posterior)
+plot(mikkel_new$posterior)
+plot(daina_new$posterior)
+```
+Remarks
+- The more data, the less the prior matters (i.e. Mikkel and Daina are exactly the same, while Kristian and Riccardo differs)
+
 
 4. You go back to your teachers and collect more data (multiply the previous numbers by 100). Calculate their knowledge with both a uniform prior and a normal prior with a mean of 0.8 and a standard deviation of 0.2. Do you still see a difference between the results? Why?
+```{r}
+riccardo_newer <- GridApp(300, 600)
+kristian_newer <- GridApp(200, 200)
+mikkel_newer <- GridApp(6600, 13200)
+daina_newer <- GridApp(16000, 19800)
+
+
+plot(riccardo_newer$prior)
+
+plot(riccardo_newer$posterior)
+plot(kristian_newer$posterior)
+plot(mikkel_newer$posterior)
+plot(daina_newer$posterior)
+
+
+
+riccardo_newer_norm <- GridApp(300, 600, prior=new_prior)
+kristian_newer_norm <- GridApp(200, 200, prior=new_prior)
+mikkel_newer_norm <- GridApp(6600, 13200, prior=new_prior)
+daina_newer_norm <- GridApp(16000, 19800, prior=new_prior)
+
+
+plot(riccardo_newer_norm$prior)
+
+plot(riccardo_newer_norm$posterior)
+plot(kristian_newer_norm$posterior)
+plot(mikkel_newer_norm$posterior)
+plot(daina_newer_norm$posterior)
+```
+The prior don't matter no more! DATA IS LOVE; DATA IS LEIF
+
 
 5. Imagine you're a skeptic and think your teachers do not know anything about CogSci, given the content of their classes. How would you operationalize that belief?
+Intuitively, one might set a prior like N(mean=0, sd=0.1), which would mean that we expect them to get every question WRONG. However, just like with the AUC of models, the "knows nothing" case is really 0.5. This is because "negative knowledge" (if we can test it) would practically be the same as true knowledge. This is because we could just invert everything they say. Therefore, the most pessimistic prior would be something like N(mean=0.5, sd=0.0(...)01) as that would signify that we're very sure they don't know anything. 
+
+
+
 
 6. Optional question: Can you estimate the difference between Riccardo's estimated knowledge and that of each of the other teachers? Would you deem it credible (that is, would you believe that it is actually different)?
+no
+
+
+
 
 7. Bonus knowledge: all the stuff we have done can be implemented in a lme4-like fashion using the brms package. Here is an example.
 
-```{r}
+```{r eval=FALSE}
 library(brms)
 
 d <- data.frame(
@@ -144,6 +297,7 @@ Questions to be answered (but see guidance below):
 1- Write a paragraph discussing how assessment of prediction performance is different in Bayesian vs. frequentist models
 2- Provide at least one plot and one written line discussing prediction errors for each of the teachers.
 
+
 This is the old data:
 - Riccardo: 3 correct answers out of 6 questions
 - Kristian: 2 correct answers out of 2 questions (then he gets bored)
@@ -155,6 +309,58 @@ This is the new data:
 - Kristian: 8 correct answers out of 12 questions
 - Daina: 148 correct answers out of 172 questions (again, Daina never gets bored)
 - Mikkel: 34 correct answers out of 65 questions
+
+#### Method 1: 
+```{r}
+plot_prior_pos <- function(bayes_dat) {
+  bayes_dat %>% 
+    select(p_grid, prior, posterior) %>% 
+    pivot_longer(-p_grid, names_to = "type", values_to = "val") %>% 
+    ggplot(aes(x = p_grid, y = val, colour = type)) + 
+    geom_point() + 
+    theme_minimal()  
+}
+
+riccardo_year2 <- GridApp(9, 10, prior=riccardo_new$posterior)
+plot_prior_pos(riccardo_year2)
+
+kristian_year2 <- GridApp(8, 12, prior=kristian_new$posterior)
+plot_prior_pos(kristian_year2)
+
+```
+#### Method 2
+```{r}
+
+
+ppd_method <- function(w, n, old_tibble) {
+  old_sample <-
+    sample(
+      old_tibble$p_grid,
+      size = 1e4,
+      replace = T,
+      prob = old_tibble$posterior
+    )
+  plot_dat <- rbinom(1e4, size = n, prob = old_sample) %>%
+    as_tibble()
+  
+  clrs <- ifelse(min(plot_dat$value):max(plot_dat$value) == w, "blue", "gray")
+  
+  print(HPDI(old_sample))
+  
+  plot_dat %>% 
+    ggplot(aes(x = value)) + 
+    geom_histogram(binwidth = 1, fill = clrs)
+}
+
+
+ppd_method(148, 172, daina_new)
+ppd_method(34, 65, mikkel_new)
+
+
+
+
+```
+
 
 Guidance Tips
 

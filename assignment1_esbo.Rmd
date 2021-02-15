@@ -32,18 +32,20 @@ BinomGridApp <- function(correct, n, density=100, prior=rep(1,density)){
   )
 }
 
-PlotGridApp <- function(gridapp, plotprior=TRUE){
+PlotGridApp <- function(gridapp, scaleprior=TRUE){
   a <- min(gridapp$posterior)
   b <- max(gridapp$posterior)
   y <- min(gridapp$prior)
   z <- max(gridapp$prior)
+  if(scaleprior==TRUE) gridapp$prior <- ((b - a) * ((gridapp$prior - y) / (z - y)) + a)
   ggplot(gridapp, aes(x=p_grid, y=posterior)) +
     geom_point(alpha=0.5, size=0.5) +
-    geom_point(aes(x=p_grid, y=((b - a) * ((gridapp$prior - y) / (z - y)) + a)), color="red", alpha=0.5, size=0.5) +
+    geom_point(aes(x=p_grid, y=prior), color="red", alpha=0.5, size=0.5) +
     theme_minimal() +
-    coord_cartesian(xlim=c(0,1), ylim=c(0,max(gridapp$posterior))) +
-    labs(title="Posterior to prior")
+    coord_cartesian(xlim=c(0,1), ylim=c(0,max(c(max(gridapp$posterior), max(gridapp$prior))))) +
+    labs(title="Posterior", caption=ifelse(scaleprior==TRUE,"Prior scaled to posterior", "Prior not scaled"))
 }
+
 ```
 
 ### First part
@@ -76,14 +78,14 @@ Questions:
 - Then implement a quadratic approximation (hint check paragraph 2.4.2!).
 - N.B. for the rest of the exercise just keep using the grid approximation (we'll move to quadratic approximations in two classes)
 
-```{r}
+```{r fig.width=4.5, fig.height=3}
 # Probability above chance Riccardo:
 # Plotting
 PlotGridApp(riccardo) +
-  labs(subtitle=paste0("Riccardo's chance of being above chance: ", sum(riccardo$posterior[50:100])))
+  labs(subtitle=paste0("Riccardo's chance of being above chance: ", sum(riccardo$posterior[51:100])))
 
 ```
-```{r}
+```{r fig.width=3,fig.height=2}
 # Quadratic approximation
 globe_qa <- rethinking::map(
     alist(
@@ -98,7 +100,8 @@ sum <- precis(globe_qa)
 # Gives stats of mean 0.5, sd 0.2, 5.5% 0.17, 94.5% 0.83
 ggplot(rnorm(100000, mean=sum$mean, sd=sum$sd) %>% as.data.frame()) +
   aes(.) +
-  geom_histogram(binwidth=0.01, color="red")
+  geom_histogram(binwidth=0.01, color="red")+
+  theme_minimal()
 ```
 
 
@@ -129,7 +132,7 @@ gridExtra::grid.arrange(p1,p2,p3,p4,ncol=2)
 
 4. You go back to your teachers and collect more data (multiply the previous numbers by 100). Calculate their knowledge with both a uniform prior and a normal prior with a mean of 0.8 and a standard deviation of 0.2. Do you still see a difference between the results? Why?
 
-```{r fig.width=10, fig.height=4}
+```{r fig.width=10, fig.height=5}
 prior <- rep(1,1000)
 p1 <- BinomGridApp(300,600,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Riccardo's knowledge")
 p2 <- BinomGridApp(300,300,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Kristian's knowledge")
@@ -220,92 +223,6 @@ stats::lm(data=data, formula="values~teacher") %>% summary
 
 ```
 
-
-7. Bonus knowledge: all the stuff we have done can be implemented in a lme4-like fashion using the brms package. Here is an example.
-
-```{r}
-library(brms)
-
-d <- data.frame(
-  Correct=c(3,2,160,66),
-  Questions=c(6,2,198,132),
-  Teacher=c("RF","KT","DC","MW"))
-
-# Model sampling only from the prior (for checking the predictions your prior leads to)
-FlatModel_priorCheck <- brm(Correct|trials(Questions) ~ 1, 
-                 data = subset(d, Teacher=="RF"),
-                 prior = prior("uniform(0,1)", class = "Intercept"),
-                 family = binomial,
-                 sample_prior = "only") # here we tell the model to ignore the data
-
-# Lots of warnings. We'll talk about them, but for now do not worry.
-
-# Plotting the predictions of the model (prior only) against the actual data
-pp_check(FlatModel_priorCheck, nsamples = 100)
-
-# Model sampling by combining prior and likelihood
-FlatModel <- brm(Correct|trials(Questions) ~ 1, 
-                 data = subset(d, Teacher=="RF"),
-                 prior = prior("uniform(0,1)", class = "Intercept"),
-                 family = binomial,
-                 sample_prior = T)
-
-# plotting the posteriors and the sampling process
-plot(FlatModel)
-
-# plotting how priors and posteriors relate to each other
-FlatPosterior <- posterior_samples(FlatModel)
-ggplot(FlatPosterior) +
-  theme_classic() +
-  geom_density(aes(prior_Intercept), alpha=0.3, fill="salmon") +
-  geom_density(aes(b_Intercept), alpha=0.5, fill="red")
-  
-
-
-PositiveModel_priorCheck <- brm(Correct|trials(Questions) ~ 1,
-                     data = subset(d, Teacher=="RF"),
-                     prior = prior("normal(0.8,0.2)", 
-                                   class = "Intercept"),
-                     family=binomial,
-                     sample_prior = "only")
-
-PositiveModel <- brm(Correct|trials(Questions) ~ 1,
-                     data = subset(d, Teacher=="RF"),
-                     prior = prior("normal(0.8,0.2)", 
-                                   class = "Intercept"),
-                     family=binomial,
-                     sample_prior = T)
-plot(PositiveModel)
-# plotting how priors and posteriors relate to each other
-PositivePosterior <- posterior_samples(PositiveModel)
-ggplot(PositivePosterior) +
-  theme_classic() +
-  geom_density(aes(prior_Intercept), alpha=0.3, fill="salmon") +
-  geom_density(aes(b_Intercept), alpha=0.5, fill="red")
-
-
-SkepticalModel_priorCheck <- brm(Correct|trials(Questions) ~ 1, 
-                      data = subset(d, Teacher=="RF"),
-                      prior=prior("normal(0.5,0.01)", class = "Intercept"),
-                      family=binomial,
-                      sample_prior = "only")
-pp_check(SkepticalModel_priorCheck, nsamples = 100)
-
-SkepticalModel <- brm(Correct|trials(Questions) ~ 1, 
-                      data = subset(d, Teacher=="RF"),
-                      prior = prior("normal(0.5,0.01)", class = "Intercept"),
-                      family = binomial,
-                      sample_prior = T)
-plot(SkepticalModel)
-
-SkepticalPosterior <- posterior_samples(SkepticalModel)
-ggplot(SkepticalPosterior) +
-  theme_classic() +
-  geom_density(aes(prior_Intercept), alpha=0.3, fill="salmon") +
-  geom_density(aes(b_Intercept), alpha=0.5, fill="red")
-
-```
-
 If you dare, try to tweak the data and model to test two hypotheses:
 - Is Kristian different from Daina?
 - Is Daina different from chance?
@@ -316,7 +233,61 @@ Last year you assessed the teachers (darned time runs quick!). Now you want to r
 
 Questions to be answered (but see guidance below):
 1- Write a paragraph discussing how assessment of prediction performance is different in Bayesian vs. frequentist models
+
+*
+Frequentist:
+- P-value
+- Testing on a test set: RMSE, confusion matrix, etc.
+
+Bayesian
+- Probabilistic
+- How do parameter estimates change?
+
+
+1. Informed prior, see how estimates change
+2. How does the new data look in last year's predictive posterior?
+*
+
 2- Provide at least one plot and one written line discussing prediction errors for each of the teachers.
+
+```{r fig.width=7, fig.height=3}
+# Riccardo & Kristian
+# Method 1
+# R: 3/6 and 9/10
+
+prior <- dnorm(1:1000/1000,mean=0.8,sd=0.2)
+riccardo_year1 <- BinomGridApp(3,6,1000,prior=prior)
+riccardo_year2 <- BinomGridApp(9,10,1000,prior=riccardo_year1$posterior)
+
+p1 <- PlotGridApp(riccardo_year2,scaleprior = F) +
+  labs(subtitle="Red = informed prior, black = posterior\nwith new data", title="Riccardo's update")
+
+
+# K: 2/2 and 8/12
+kristian_year1 <- BinomGridApp(2,2,1000,prior=prior)
+kristian_year2 <- BinomGridApp(8,12,1000,prior=kristian_year1$posterior)
+
+p2 <- PlotGridApp(kristian_year2,scaleprior = F) +
+  labs(subtitle="Red = informed prior, black = posterior\nwith new data", title="Kristian's update")
+
+gridExtra::grid.arrange(p1,p2, ncol=2)
+
+```
+
+
+```{r}
+# Daina & Mikkel
+# Method 2: Compare prior and posterior
+# D: 160/198 and 148/172
+# M: 66/132 and 34/65
+prior <- dnorm(1:1000/1000,mean=0.8,sd=0.2)
+p1 <- BinomGridApp(3,6,100,prior=prior) %>% PlotGridApp() + labs(subtitle="Riccardo's knowledge")
+
+
+
+
+```
+
 
 This is the old data:
 - Riccardo: 3 correct answers out of 6 questions

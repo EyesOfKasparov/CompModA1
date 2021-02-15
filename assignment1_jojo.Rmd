@@ -85,7 +85,7 @@ Questions:
 
 ```{r}
 # Grid approximation
-riccardo <- GridApp(3, 6, nsample=20)
+riccardo <- GridApp(3, 6, nsample=1000)
 plot(riccardo$posterior)
 
 # prob of being larger
@@ -184,7 +184,6 @@ plot(riccardo_newer_norm$posterior)
 plot(kristian_newer_norm$posterior)
 plot(mikkel_newer_norm$posterior)
 plot(daina_newer_norm$posterior)
-riccardo_new$posterior
 ```
 The prior don't matter no more! DATA IS LOVE; DATA IS LEIF
 
@@ -203,7 +202,7 @@ no
 
 7. Bonus knowledge: all the stuff we have done can be implemented in a lme4-like fashion using the brms package. Here is an example.
 
-```{r}
+```{r eval=FALSE}
 library(brms)
 
 d <- data.frame(
@@ -298,6 +297,7 @@ Questions to be answered (but see guidance below):
 1- Write a paragraph discussing how assessment of prediction performance is different in Bayesian vs. frequentist models
 2- Provide at least one plot and one written line discussing prediction errors for each of the teachers.
 
+
 This is the old data:
 - Riccardo: 3 correct answers out of 6 questions
 - Kristian: 2 correct answers out of 2 questions (then he gets bored)
@@ -309,6 +309,58 @@ This is the new data:
 - Kristian: 8 correct answers out of 12 questions
 - Daina: 148 correct answers out of 172 questions (again, Daina never gets bored)
 - Mikkel: 34 correct answers out of 65 questions
+
+#### Method 1: 
+```{r}
+plot_prior_pos <- function(bayes_dat) {
+  bayes_dat %>% 
+    select(p_grid, prior, posterior) %>% 
+    pivot_longer(-p_grid, names_to = "type", values_to = "val") %>% 
+    ggplot(aes(x = p_grid, y = val, colour = type)) + 
+    geom_point() + 
+    theme_minimal()  
+}
+
+riccardo_year2 <- GridApp(9, 10, prior=riccardo_new$posterior)
+plot_prior_pos(riccardo_year2)
+
+kristian_year2 <- GridApp(8, 12, prior=kristian_new$posterior)
+plot_prior_pos(kristian_year2)
+
+```
+#### Method 2
+```{r}
+
+
+ppd_method <- function(w, n, old_tibble) {
+  old_sample <-
+    sample(
+      old_tibble$p_grid,
+      size = 1e4,
+      replace = T,
+      prob = old_tibble$posterior
+    )
+  plot_dat <- rbinom(1e4, size = n, prob = old_sample) %>%
+    as_tibble()
+  
+  clrs <- ifelse(min(plot_dat$value):max(plot_dat$value) == w, "blue", "gray")
+  
+  print(HPDI(old_sample))
+  
+  plot_dat %>% 
+    ggplot(aes(x = value)) + 
+    geom_histogram(binwidth = 1, fill = clrs)
+}
+
+
+ppd_method(148, 172, daina_new)
+ppd_method(34, 65, mikkel_new)
+
+
+
+
+```
+
 
 Guidance Tips
 

@@ -345,18 +345,20 @@ ppd_method <- function(w, n, old_tibble) {
   
   clrs <- ifelse(min(plot_dat$value):max(plot_dat$value) == w, "blue", "gray")
   
-  print(HPDI(old_sample))
+  hpdi_old <- HPDI(old_sample)
+  
+  print(hpdi_old)
+  print(between(w/n, hpdi_old[1], hpdi_old[2]))
   
   plot_dat %>% 
     ggplot(aes(x = value)) + 
-    geom_histogram(binwidth = 1, fill = clrs)
+    geom_histogram(binwidth = 1, fill = clrs) + 
+    theme_minimal()
 }
 
 
 ppd_method(148, 172, daina_new)
 ppd_method(34, 65, mikkel_new)
-
-
 
 
 ```

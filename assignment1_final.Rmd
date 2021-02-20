@@ -1,0 +1,309 @@
+---
+title: "Computational Modeling - Assignment 2"
+author: "Riccardo Fusaroli"
+date: "07/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, ggplot2, brms, rethinking, lme4)
+```
+
+## In this assignment we learn how to assess rates from a binomial distribution, using the case of assessing your teachers' knowledge of CogSci
+
+N.B. this markdown has 2 parts as it spans 2 weeks of teaching
+
+```{r fig.width=8, fig.height=3}
+
+BinomGridApp <- function(correct, n, density=100, prior=rep(1,density)){
+  p_grid <- seq(from=0, to=1, length.out=density)
+  likelihood <- dbinom(correct, size=n, prob=p_grid)
+  unstd_posterior <- likelihood * prior
+  posterior <- unstd_posterior / sum(unstd_posterior)
+  return(
+    tibble(
+      p_grid = p_grid,
+      prior = prior,
+      likelihood = likelihood,
+      unstd_posterior = unstd_posterior,
+      posterior = posterior
+    )
+  )
+}
+
+PlotGridApp <- function(gridapp, scaleprior=TRUE){
+  a <- min(gridapp$posterior)
+  b <- max(gridapp$posterior)
+  y <- min(gridapp$prior)
+  z <- max(gridapp$prior)
+  if(scaleprior==TRUE) gridapp$prior <- ((b - a) * ((gridapp$prior - y) / (z - y)) + a)
+  ggplot(gridapp, aes(x=p_grid, y=posterior)) +
+    geom_point(alpha=0.5, size=0.5) +
+    geom_point(aes(x=p_grid, y=prior), color="red", alpha=0.5, size=0.5) +
+    theme_minimal() +
+    coord_cartesian(xlim=c(0,1), ylim=c(0,max(c(max(gridapp$posterior), max(gridapp$prior))))) +
+    labs(title="Posterior", caption=ifelse(scaleprior==TRUE,"Prior scaled to posterior", "Prior not scaled"))
+}
+
+```
+
+### First part
+
+You want to assess your teachers' knowledge of cognitive science. "These guys are a bunch of drama(turgist) queens, mindless philosophers, chattering communication people and Russian spies. Do they really know CogSci?", you think.
+
+To keep things simple (your teachers should not be faced with too complicated things):
+- You created a pool of equally challenging questions on CogSci
+- Each question can be answered correctly or not (we don't allow partially correct answers, to make our life simpler).
+- Knowledge of CogSci can be measured on a scale from 0 (negative knowledge, all answers wrong) through 0.5 (random chance) to 1 (awesome CogSci superpowers)
+
+This is the data:
+- Riccardo: 3 correct answers out of 6 questions
+- Kristian: 2 correct answers out of 2 questions (then he gets bored)
+- Daina: 160 correct answers out of 198 questions (Daina never gets bored)
+- Mikkel: 66 correct answers out of 132 questions
+
+```{r}
+riccardo <- BinomGridApp(3,6,100)
+kristian <- BinomGridApp(2,2,100)
+daina <- BinomGridApp(160,198,100)
+mikkel <- BinomGridApp(66,132,100)
+```
+
+
+Questions:
+
+1. What's Riccardo's estimated knowledge of CogSci? What is the probability he knows more than chance (0.5) [try figuring this out. if you can't peek into chapters 3.1 and 3.2 and/or the slides]?
+- First implement a grid approximation (hint check paragraph 2.4.1!) with a uniform prior, calculate the posterior and plot the results
+- Then implement a quadratic approximation (hint check paragraph 2.4.2!).
+- N.B. for the rest of the exercise just keep using the grid approximation (we'll move to quadratic approximations in two classes)
+
+```{r fig.width=4.5, fig.height=3}
+# Probability above chance Riccardo:
+# Plotting
+PlotGridApp(riccardo) +
+  labs(subtitle=paste0("Riccardo's chance of being above chance: ", sum(riccardo$posterior[51:100])))
+
+```
+```{r fig.width=3,fig.height=2}
+# Quadratic approximation
+globe_qa <- rethinking::map(
+    alist(
+        w ~ dbinom(6,p),    # binomial likelihood function with 6 total samples
+        p ~ dunif(0,1)      # uniform prior
+    ),
+    data=list(w=3))
+    
+# display summary of quadratic approximation
+sum <- precis(globe_qa)
+
+# Gives stats of mean 0.5, sd 0.2, 5.5% 0.17, 94.5% 0.83
+ggplot(rnorm(100000, mean=sum$mean, sd=sum$sd) %>% as.data.frame()) +
+  aes(.) +
+  geom_histogram(binwidth=0.01, color="red")+
+  theme_minimal()
+```
+
+
+2. Estimate all the teachers' knowledge of CogSci. Who's best? Use grid approximation. Comment on the posteriors of Riccardo and Mikkel.
+2a. Produce plots of the prior, and posterior for each teacher.
+```{r}
+p1 <- PlotGridApp(riccardo) + labs(subtitle="Riccardo's knowledge")
+p2 <- PlotGridApp(kristian) + labs(subtitle="Kristian's knowledge")
+p3 <- PlotGridApp(daina) + labs(subtitle="Daina's knowledge")
+p4 <- PlotGridApp(mikkel) + labs(subtitle="Mikkel's knowledge")
+gridExtra::grid.arrange(p1,p2,p3,p4,ncol=2)
+```
+Riccardo's looks relatively Gaussian while Kristian's is completely faulty because he is lazy boi *thin eyes looking angry*!!
+Daina's knowledge is sure to be eternally the truest while Mikkel's is the very average. We can clearly see how the amount of questions answered shapes the form of the posterior since the more samples we have, the more sure we are of the teacher's knowledge (narrower distribution).
+
+3. Change the prior. Given your teachers have all CogSci jobs, you should start with a higher appreciation of their knowledge: the prior is a normal distribution with a mean of 0.8 and a standard deviation of 0.2. Do the results change (and if so how)?
+3a. Produce plots of the prior and posterior for each teacher.
+```{r}
+prior=dnorm(1:100/100,mean=0.8,sd=0.2)
+p1 <- BinomGridApp(3,6,prior=prior) %>% PlotGridApp() + labs(subtitle="Riccardo's knowledge")
+p2 <- BinomGridApp(3,3,prior=prior) %>% PlotGridApp() + labs(subtitle="Kristian's knowledge")
+p3 <- BinomGridApp(160,198,prior=prior) %>% PlotGridApp() + labs(subtitle="Daina's knowledge")
+p4 <- BinomGridApp(66,132,prior=prior) %>% PlotGridApp() + labs(subtitle="Mikkel's knowledge")
+gridExtra::grid.arrange(p1,p2,p3,p4,ncol=2)
+```
+
+
+
+4. You go back to your teachers and collect more data (multiply the previous numbers by 100). Calculate their knowledge with both a uniform prior and a normal prior with a mean of 0.8 and a standard deviation of 0.2. Do you still see a difference between the results? Why?
+
+```{r fig.width=10, fig.height=5}
+prior <- rep(1,1000)
+p1 <- BinomGridApp(300,600,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Riccardo's knowledge")
+p2 <- BinomGridApp(300,300,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Kristian's knowledge")
+p3 <- BinomGridApp(16000,19800,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Daina's knowledge")
+p4 <- BinomGridApp(6600,13200,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Mikkel's knowledge")
+
+prior <- dnorm(1:1000/1000,mean=0.8,sd=0.2)
+p5 <- BinomGridApp(300,600,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Riccardo's knowledge")
+p6 <- BinomGridApp(300,300,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Kristian's knowledge")
+p7 <- BinomGridApp(16000,19800,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Daina's knowledge")
+p8 <- BinomGridApp(6600,13200,1000,prior=prior) %>% PlotGridApp() + labs(subtitle="Mikkel's knowledge")
+gridExtra::grid.arrange(p1,p2,p3,p4,
+                        p5,p6,p7,p8,
+                        ncol=4)
+```
+
+No, we don't see any big difference between the two priors with this amount of data, which makes a lot of sense. The less data we have, the more we have to rely on our priors "just like in nature" -Jojo.
+
+
+5. Imagine you're a skeptic and think your teachers do not know anything about CogSci, given the content of their classes. How would you operationalize that belief?
+
+So if they LITERALLY do not know _anything_, we give them a prior of a VERY toight gaussian distribution, e.g: gaussian(mean=0.5,sd=0) (maybe give it a very small sd because we might be _a bit_ uncertain and not infinitely certain on a probability of correct answers of 0.5).
+
+
+6. Optional question: Can you estimate the difference between Riccardo's estimated knowledge and that of each of the other teachers? Would you deem it credible (that is, would you believe that it is actually different)?
+
+A very simple method is to use grid approximation and just take the place with the highest value so we can see where their (presumably) binomial posterior distribution is maximized. This is sort of like taking the HPDI (which we could also do) since we take the highest probability (though it's not the same because it only returns one value and not an interval). 
+
+```{r}
+prior <- rep(1,1000)
+riccardo <- BinomGridApp(3,6,1000,prior=prior)
+kristian <- BinomGridApp(3,3,1000,prior=prior)
+daina <- BinomGridApp(160,198,1000,prior=prior)
+mikkel <- BinomGridApp(66,132,1000,prior=prior)
+
+# Comparing the maximum values of the posteriors
+rM <- riccardo %>% 
+  filter(posterior==max(posterior)) %>% 
+  select(p_grid)
+rM <- mean(rM$p_grid)
+
+kM <- kristian %>% 
+  filter(posterior==max(posterior)) %>% 
+  select(p_grid)
+
+dM <- daina %>% 
+  filter(posterior==max(posterior)) %>% 
+  select(p_grid)
+
+mM <- mikkel %>% 
+  filter(posterior==max(posterior)) %>% 
+  select(p_grid)
+mM <- mean(mM$p_grid)
+
+tibble(name=c("Riccardo", "Kristian", "Daina","Mikkel"), max=c(rM, kM, dM, mM)) %>% 
+  mutate(max=as.numeric(max))
+```
+
+Another method for comparing the expertise of our teachers numerically is using quadratic approximation to find the gaussian distribution approximation of the posterior from which we can sample the amount of samples. Then we do a t-test (lm(value~teacher)) and get it out as a summary to see how different they are.
+
+```{r}
+# Quadratic approximation
+riccardo_gaus <- rethinking::map(
+    alist(
+        w ~ dbinom(6,p),    # binomial likelihood function with 6 total samples
+        p ~ dunif(0,1)      # uniform prior
+    ),
+    data=list(w=3))
+
+daina_gaus <- rethinking::map(
+    alist(
+        w ~ dbinom(198,p),    # binomial likelihood function with 6 total samples
+        p ~ dunif(0,1)      # uniform prior
+    ),
+    data=list(w=160))
+
+ric_norm <- precis(riccardo_gaus)
+dai_norm <- precis(daina_gaus)
+
+data <- tibble(
+  teacher=c(rep("Riccardo", 6),
+            rep("Daina", 198)),
+  values=c(rnorm(6,mean=ric_norm$mean, sd=ric_norm$sd), 
+           rnorm(198,mean=dai_norm$mean, sd=ric_norm$sd))
+) %>% as.data.frame
+
+stats::lm(data=data, formula="values~teacher") %>% summary
+
+```
+
+If you dare, try to tweak the data and model to test two hypotheses:
+- Is Kristian different from Daina?
+- Is Daina different from chance?
+
+### Second part: Focusing on predictions
+
+Last year you assessed the teachers (darned time runs quick!). Now you want to re-test them and assess whether your models are producing reliable predictions. In Methods 3 we learned how to do machine-learning style assessment of predictions (e.g. rmse on testing datasets). Bayesian stats makes things a bit more complicated. So we'll try out how that works. N.B. You can choose which prior to use for the analysis of last year's data.
+
+Questions to be answered (but see guidance below):
+1- Write a paragraph discussing how assessment of prediction performance is different in Bayesian vs. frequentist models
+
+*
+Frequentist:
+- P-value
+- Testing on a test set: RMSE, confusion matrix, etc.
+
+Bayesian
+- Probabilistic
+- How do parameter estimates change?
+
+
+1. Informed prior, see how estimates change
+2. How does the new data look in last year's predictive posterior?
+*
+
+2- Provide at least one plot and one written line discussing prediction errors for each of the teachers.
+
+```{r fig.width=7, fig.height=3}
+# Riccardo & Kristian
+# Method 1
+# R: 3/6 and 9/10
+
+prior <- dnorm(1:1000/1000,mean=0.8,sd=0.2)
+riccardo_year1 <- BinomGridApp(3,6,1000,prior=prior)
+riccardo_year2 <- BinomGridApp(9,10,1000,prior=riccardo_year1$posterior)
+
+p1 <- PlotGridApp(riccardo_year2,scaleprior = F) +
+  labs(subtitle="Red = informed prior, black = posterior\nwith new data", title="Riccardo's update")
+
+
+# K: 2/2 and 8/12
+kristian_year1 <- BinomGridApp(2,2,1000,prior=prior)
+kristian_year2 <- BinomGridApp(8,12,1000,prior=kristian_year1$posterior)
+
+p2 <- PlotGridApp(kristian_year2,scaleprior = F) +
+  labs(subtitle="Red = informed prior, black = posterior\nwith new data", title="Kristian's update")
+
+gridExtra::grid.arrange(p1,p2, ncol=2)
+
+```
+
+
+```{r}
+# Daina & Mikkel
+# Method 2: Compare prior and posterior
+# D: 160/198 and 148/172
+# M: 66/132 and 34/65
+prior <- dnorm(1:1000/1000,mean=0.8,sd=0.2)
+p1 <- BinomGridApp(3,6,100,prior=prior) %>% PlotGridApp() + labs(subtitle="Riccardo's knowledge")
+
+
+
+
+```
+
+
+This is the old data:
+- Riccardo: 3 correct answers out of 6 questions
+- Kristian: 2 correct answers out of 2 questions (then he gets bored)
+- Daina: 160 correct answers out of 198 questions (Daina never gets bored)
+- Mikkel: 66 correct answers out of 132 questions
+
+This is the new data:
+- Riccardo: 9 correct answers out of 10 questions (then he freaks out about teaching preparation and leaves)
+- Kristian: 8 correct answers out of 12 questions
+- Daina: 148 correct answers out of 172 questions (again, Daina never gets bored)
+- Mikkel: 34 correct answers out of 65 questions
+
+Guidance Tips
+
+1. There are at least two ways of assessing predictions.
+2. Last year's results are this year's expectations.
+3. Are the parameter estimates changing? (way 1)
+4. How does the new data look in last year's predictive posterior? (way 2)

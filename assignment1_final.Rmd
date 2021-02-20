@@ -1,6 +1,6 @@
 ---
 title: "Computational Modeling - Assignment 2"
-author: "Riccardo Fusaroli"
+author: "The Eyes of Kasparov"
 date: "07/01/2021"
 output: html_document
 ---
